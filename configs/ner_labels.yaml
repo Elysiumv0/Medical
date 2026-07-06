@@ -1,0 +1,14 @@
+# Source of truth for NER labels
+# Used by clinical_nlp.ner.constants to generate LABEL2ID at runtime
+labels:
+  - O
+  - B-THUỐC
+  - I-THUỐC
+  - B-BỆNH
+  - I-BỆNH
+  - B-TRIỆU_CHỨNG
+  - I-TRIỆU_CHỨNG
+  - B-THÔNG_TIN_BỆNH_NHÂN
+  - I-THÔNG_TIN_BỆNH_NHÂN
+  - B-KẾT_QUẢ_XÉT_NGHIỆM
+  - I-KẾT_QUẢ_XÉT_NGHIỆM
