@@ -16,6 +16,7 @@ Chạy:
 import json
 import argparse
 import numpy as np
+import os
 
 
 LABEL_LIST = [
@@ -31,49 +32,93 @@ ID2LABEL = {i: l for i, l in enumerate(LABEL_LIST)}
 
 
 def load_jsonl(path):
-    with open(path, encoding="utf-8") as f:
-        return [json.loads(line) for line in f]
+    """Load JSONL, tự động tìm trong mọi ngóc ngách của Colab."""
+    base_name = os.path.basename(path)
+
+    # Danh sách các đường dẫn tiềm năng, bao gồm cả các folder lồng nhau
+    possible_paths = [
+        path,                                             # 1. Đúng như args truyền vào
+        os.path.join("ner_data", "converted_data", base_name), # 2. Cấu trúc chuẩn notebook
+        os.path.join("converted_data", base_name),        # 3. Folder converted_data ở root
+        base_name,                                        # 4. Ngay tại root /content/
+        os.path.join("ner_data", base_name),              # 5. Trong folder ner_data/
+    ]
+
+    for p in possible_paths:
+        try:
+            with open(p, encoding="utf-8") as f:
+                return [json.loads(line) for line in f]
+        except FileNotFoundError:
+            continue
+
+    raise FileNotFoundError(f"Could not find {base_name} in any of the searched locations: {possible_paths}")
 
 
 def char_entities_to_bio_labels(text: str, entities: list, tokenizer, max_length=256):
     """
-    ĐÂY LÀ HÀM QUAN TRỌNG NHẤT — xử lý đúng cạm bẫy offset đã cảnh báo từ đầu.
+    PHOBERT-SPECIFIC BIO alignment. PhoBERT Python tokenizer không hỗ trợ
+    return_offsets_mapping / word_ids() / pre_tokenize — phải tokenize thủ công.
 
-    Dùng tokenizer FAST (return_offsets_mapping=True) để lấy char-span của
-    từng token, rồi map ngược sang nhãn BIO dựa trên overlap giữa token-span
-    và entity-span theo CHAR OFFSET — không dựa vào việc đếm từ/tách theo
-    khoảng trắng (cách đó sẽ sai với BPE subword tokenization).
+    Cách làm:
+    1. Regex segment text → words + char offsets
+    2. Encode từng word riêng → subword tokens
+    3. Map entity char-span → word range → subword BIO tags
 
-    Trả về: input_ids, attention_mask, labels (list số nguyên theo LABEL2ID)
+    Trả về: dict với input_ids, attention_mask, labels (list int theo LABEL2ID)
     """
-    encoding = tokenizer(
-        text, truncation=True, max_length=max_length,
-        return_offsets_mapping=True, padding="max_length",
-    )
-    offset_mapping = encoding["offset_mapping"]
-    labels = [LABEL2ID["O"]] * len(offset_mapping)
+    import re
 
+    entity_types = {"THUỐC", "BỆNH", "TRIỆU_CHỨNG", "THÔNG_TIN_BỆNH_NHÂN", "KẾT_QUẢ_XÉT_NGHIỆM"}
+
+    # ---- Bước 1: Segment text thành words + track char offsets ----
+    # Regex tách: số bullet (1., 2.), dấu câu (: ; . ,), và từ thông thường
+    words = []  # (word_str, char_start, char_end)
+    for m in re.finditer(r'\d+\.|[:;,.?!]|\S+', text):
+        words.append((m.group(), m.start(), m.end()))
+
+    # ---- Bước 2: Per-word encode → subword tokens + ánh xạ subword→word ----
+    all_input_ids = []
+    subword_to_word = []  # sub_idx → (word_idx, char_start, char_end)
+    for wid, (w_str, w_cs, w_ce) in enumerate(words):
+        sub_ids = tokenizer.encode(w_str, add_special_tokens=False)
+        all_input_ids.extend(sub_ids)
+        for _ in sub_ids:
+            subword_to_word.append((wid, w_cs, w_ce))
+
+    # Truncate to max_length
+    all_input_ids = all_input_ids[:max_length]
+    subword_to_word = subword_to_word[:max_length]
+
+    # ---- Bước 3: Init labels all O ----
+    labels = [LABEL2ID["O"]] * len(all_input_ids)
+
+    # ---- Bước 4: Map entity char-span → subword BIO tags ----
     for entity in entities:
         e_start, e_end = entity["position"]
         e_type = entity["type"]
-        if e_type not in {"THUỐC", "BỆNH", "TRIỆU_CHỨNG", "THÔNG_TIN_BỆNH_NHÂN", "KẾT_QUẢ_XÉT_NGHIỆM"}:
-            continue  # bỏ qua type lạ không có trong LABEL_LIST, tránh crash
+        if e_type not in entity_types:
+            continue
 
         first_token_in_entity = True
-        for i, (tok_start, tok_end) in enumerate(offset_mapping):
-            if tok_start == tok_end == 0:
-                continue  # special token ([CLS], [SEP], padding) — offset (0,0)
-
-            # Token được coi là thuộc entity nếu có overlap với entity span
-            if tok_start < e_end and tok_end > e_start:
+        for sub_i, (wid, w_cs, w_ce) in enumerate(subword_to_word):
+            # overlap: word span khớp với entity char span?
+            if w_cs < e_end and w_ce > e_start:
                 if first_token_in_entity:
-                    labels[i] = LABEL2ID[f"B-{e_type}"]
+                    labels[sub_i] = LABEL2ID[f"B-{e_type}"]
                     first_token_in_entity = False
                 else:
-                    labels[i] = LABEL2ID[f"I-{e_type}"]
+                    labels[sub_i] = LABEL2ID[f"I-{e_type}"]
 
-    encoding["labels"] = labels
-    encoding.pop("offset_mapping")  # không cần giữ lại cho training, chỉ cần cho bước này
+    # ---- Bước 5: Bọc special tokens và attention_mask ----
+    input_ids = [tokenizer.bos_token_id] + all_input_ids + [tokenizer.eos_token_id]
+    labels = [LABEL2ID["O"]] + labels + [LABEL2ID["O"]]
+    attention_mask = [1] * len(input_ids)
+
+    encoding = {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "labels": labels,
+    }
     return encoding
 
 
@@ -116,8 +161,8 @@ def compute_metrics_fn(eval_pred):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default="vinai/phobert-base")
-    parser.add_argument("--train_path", default="converted_data/combined_train.jsonl")
-    parser.add_argument("--dev_path", default="converted_data/combined_dev.jsonl")
+    parser.add_argument("--train_path", default="combined_train.jsonl")
+    parser.add_argument("--dev_path", default="combined_dev.jsonl")
     parser.add_argument("--output_dir", default="ner_model_output")
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=16)
@@ -181,6 +226,7 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=dev_dataset,
         compute_metrics=compute_metrics_fn,
+        data_collator=DataCollatorForTokenClassification(tokenizer),
     )
 
     print("Bắt đầu training...")
