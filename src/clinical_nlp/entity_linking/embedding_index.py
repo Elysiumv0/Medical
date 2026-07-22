@@ -1,12 +1,3 @@
-"""
-Build embedding index cho ICD-10 dictionary — chạy 1 lần, lưu cache, dùng lại
-nhiều lần (tránh encode lại 13K dòng mỗi lần chạy).
-
-Cần cài: pip install sentence-transformers faiss-cpu
-Model bge-m3 hỗ trợ tốt tiếng Việt, kích thước vừa phải (~2.2GB) — cần internet
-để tải lần đầu (model tải từ HuggingFace, không tải được trong sandbox này do
-giới hạn network, PHẢI chạy ở máy bạn).
-"""
 import numpy as np
 import pandas as pd
 
@@ -34,7 +25,6 @@ def build_and_save_index(dict_df, save_prefix="icd10_embed", model_name="BAAI/bg
 
 
 class CachedEmbedder:
-    """Wrapper để dùng lại model đã load, tránh load lại mỗi lần gọi embed_fn."""
     def __init__(self, model_name="BAAI/bge-m3"):
         from sentence_transformers import SentenceTransformer
         self.model = SentenceTransformer(model_name)
