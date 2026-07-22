@@ -1,10 +1,3 @@
-"""
-NER label constants.
-
-Usage:
-    from constants import LABEL_LIST, LABEL2ID, ID2LABEL
-"""
-
 LABEL_LIST = [
     "O",
     "B-THUỐC", "I-THUỐC",
