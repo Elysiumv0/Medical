@@ -1,14 +1,3 @@
-"""
-Matcher vectorized cho Entity Linking (ICD-10 / RxNorm).
-
-Thay vòng lặp for _, row in df.iterrows() bằng rapidfuzz.process.cdist
-để tăng tốc độ x10-50 lần trên dict lớn.
-
-Nguyên tắc:
-  - top_k MẶC ĐỊNH = 1 để tối ưu Jaccard (tránh tăng union vô ích).
-  - Tie-break: Khi score bằng nhau, ưu tiên mã ngắn hơn (parent) -> mã dài (child).
-  - Sanity Check: Dùng embedding cosine similarity làm VETO (loại bỏ match sai chapter).
-"""
 from dataclasses import dataclass
 from typing import Optional, List
 import numpy as np
