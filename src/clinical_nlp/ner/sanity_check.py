@@ -1,13 +1,3 @@
-"""
-Sanity check NER model trên test set — dùng đúng tokenizer đã train.
-In exact-match recall + top errors để phân tích.
-
-Usage:
-    cd src && PYTHONPATH=. python3 clinical_nlp/ner/sanity_check.py \
-        --model_path /mnt/c/Users/ADMIN/Downloads/ner_model_v2 \
-        --test_path /mnt/c/Users/ADMIN/Downloads/Medical/data/ner/combined_test.jsonl
-"""
-
 import json
 import argparse
 from transformers import AutoTokenizer, AutoModelForTokenClassification
@@ -18,7 +8,6 @@ try:
 except ImportError:
     from clinical_nlp.ner.predict import predict_entities
     from clinical_nlp.ner.constants import ID2LABEL
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -75,7 +64,7 @@ def main():
     print(f"{'='*60}")
 
     if errors:
-        print(f"\n--- TOP ERRORS ({len(errors)} shown) ---")
+        print(f"\n TOP ERRORS ({len(errors)} shown) ")
         for e in errors:
             print(f"  [{e['idx']}] {e['text']}")
             if e["missed"]:
