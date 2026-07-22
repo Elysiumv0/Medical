@@ -1,13 +1,3 @@
-"""
-Sanity check NER model trên test set.
-Dùng predict.py đã có để inference, evaluate.py để tính F1.
-
-Usage:
-    python3 src/clinical_nlp/ner/sanity.py \
-        --model_path models/ner_v2 \
-        --test_path data/ner/combined_test.jsonl
-"""
-
 import json
 import argparse
 import sys
@@ -79,12 +69,10 @@ def main():
             print(f"[{i}/{len(records)}] '{text[:60]}...' → {len(gold)} gold, {len(pred)} pred, matched={matches}")
 
     recall = correct / total * 100 if total > 0 else 0
-    print(f"\n{'='*60}")
     print(f"EXACT MATCH RECALL: {correct}/{total} = {recall:.1f}%")
-    print(f"({'='*60})")
 
     if errors:
-        print(f"\n--- TOP ERRORS (first {len(errors)}) ---")
+        print(f"\nTOP ERRORS (first {len(errors)})")
         for e in errors:
             print(f"  [{e['idx']}] {e['text']}")
             if e["missed"]:
