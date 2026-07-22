@@ -11,9 +11,9 @@ except ImportError:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", required=True)
-    parser.add_argument("--test_path", required=True)
-    parser.add_argument("--max_samples", type=int, default=0)
+    parser.add_argument("model_path", required=True)
+    parser.add_argument("test_path", required=True)
+    parser.add_argument("max_samples", type=int, default=0)
     args = parser.parse_args()
 
     print(f"Loading model from {args.model_path}")
@@ -59,9 +59,7 @@ def main():
             print(f"[{i+1}/{len(records)}] running recall={correct/total*100:.1f}%...")
 
     recall = correct / total * 100 if total > 0 else 0
-    print(f"\n{'='*60}")
     print(f"EXACT MATCH RECALL: {correct}/{total} = {recall:.1f}%")
-    print(f"{'='*60}")
 
     if errors:
         print(f"\n TOP ERRORS ({len(errors)} shown) ")
