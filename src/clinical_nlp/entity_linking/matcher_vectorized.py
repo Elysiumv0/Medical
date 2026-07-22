@@ -24,9 +24,10 @@ class MatchResult:
     score: float = None
 
 class DiseaseMatcher:
-    def __init__(self, dict_df, embed_fn=None):
+    def __init__(self, dict_df, embed_fn=None, embed_sanity_threshold=0.35):
         self.dict_df = dict_df.reset_index(drop=True)
         self.embed_fn = embed_fn
+        self.embed_sanity_threshold = embed_sanity_threshold
         self._norm_texts = self.dict_df["norm_name_vi"].astype(str).tolist()
 
         # Build exact-lookup
@@ -96,7 +97,7 @@ class DiseaseMatcher:
 
                 if self.embed_fn is not None:
                     cos = self._cosine(query, matched_str)
-                    if cos is not None and cos < 0.30:
+                    if cos is not None and cos < self.embed_sanity_threshold:
                         continue
 
                 return [MatchResult(

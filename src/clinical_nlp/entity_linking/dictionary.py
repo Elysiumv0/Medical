@@ -27,12 +27,16 @@ def load_rxnorm(rrf_path: str, keep_tty=("SCD", "SBD", "IN", "PIN")) -> pd.DataF
 
 
 def load_icd10(excel_path: str, code_col: str, name_col: str,
-               name_col_en: str = None) -> pd.DataFrame:
+               name_col_en: str = None, header_row: int = None) -> pd.DataFrame:
     """
     Đọc file Excel danh mục ICD-10 (Bộ Y tế). Tên cột code_col/name_col cần
     khớp với cấu trúc file thực tế — kiểm tra bằng df.columns trước khi gọi.
+    header_row: row index (0-based) of the actual header in the Excel file.
+                If None, let pandas auto-detect. For the BHXH 2021 file, use 4.
     """
-    df = pd.read_excel(excel_path, dtype=str)
+    df = pd.read_excel(excel_path, engine='openpyxl', dtype=str, header=header_row)
+    # Strip whitespace from all column names (Excel merge cells often leave trailing space)
+    df.columns = df.columns.str.strip()
     df = df.rename(columns={code_col: "code", name_col: "name_vi"})
     if name_col_en and name_col_en in df.columns:
         df = df.rename(columns={name_col_en: "name_en"})
