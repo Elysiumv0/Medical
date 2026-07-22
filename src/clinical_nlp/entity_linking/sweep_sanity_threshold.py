@@ -1,39 +1,18 @@
-"""
-Sweep sanity threshold trên bộ paraphrase 53 case.
-Dùng embedding cache có sẵn (không cần load model lại) + matcher_vectorized.
-In ra: accuracy, phân bố stage, và với từng threshold — danh sách case bị reject.
-
-Chạy sau build_embedding_cache.py:
-    python3 build_embedding_cache.py   # 1 lần
-    python3 sweep_sanity_threshold.py  # sweep
-"""
 import sys, os, time
 import numpy as np
 import pandas as pd
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dictionary import load_icd10
 from matcher_vectorized import DiseaseMatcher
-
-# === CONFIG (giữ giống build_embedding_cache.py) ===
 EXCEL_PATH = "ICD_23_8_2021_132741591570640911_a21a50083a.xlsx"
 CODE_COL = "Mã"
 NAME_COL = "Tên bệnh"
 HEADER_ROW = 4
-EMBED_CACHE = "icd10_embeddings.npy"  # file từ build_embedding_cache.py
-
-# === Load test set ===
+EMBED_CACHE = "icd10_embeddings.npy" 
 from run_paraphrase_eval import PARAPHRASE_TEST_SET as TEST_SET
-
-# === Load dictionary + embeddings ===
-print("Loading dictionary...")
 icd_df = load_icd10(EXCEL_PATH, code_col=CODE_COL, name_col=NAME_COL, header_row=HEADER_ROW)
-
-print(f"Loading embeddings from {EMBED_CACHE}...")
 all_embeddings = np.load(EMBED_CACHE)
 print(f"Embeddings: {all_embeddings.shape}")
-
-# Build lookup: norm_name_vi -> embedding vector (dùng dict vì nhiều entry có cùng norm_name)
 text_to_emb = {}
 for i, row in icd_df.iterrows():
     text = str(row["norm_name_vi"]).strip()
@@ -41,7 +20,6 @@ for i, row in icd_df.iterrows():
         text_to_emb[text] = all_embeddings[i]
 
 class CachedEmbedder:
-    """Không cần model — chỉ lookup từ cache."""
     def __call__(self, texts):
         if isinstance(texts, str):
             texts = [texts]
@@ -64,16 +42,8 @@ embed_fn = CachedEmbedder()
 #
 # CẦN SỬA: query embedding từ model nữa. Nhưng sweep này cần model.
 # Tạm thời: dùng BGE-M3 encode cả query + candidate thật.
-# => Cần model, không chỉ cache.
-# => Đây là script tạm — người dùng cần chạy với model thật.
-
-print("\n⚠️  CẢNH BÁO: Script này cần SentenceTransformer model để encode QUERY.")
-print("CachedEmbedder chỉ có candidate vectors. Query cần encode online.")
-print("Nếu chưa có internet / chưa tải model, script sẽ báo lỗi ở dưới.\n")
-
 # Load model
 from sentence_transformers import SentenceTransformer
-print("Loading BGE-M3 model...")
 model = SentenceTransformer("BAAI/bge-m3")
 
 def embed_both_query_and_candidates(query_text, candidate_texts):
@@ -83,7 +53,6 @@ def embed_both_query_and_candidates(query_text, candidate_texts):
     return emb[0], emb[1:]  # query_vec, candidate_vecs
 
 class FullEmbedder:
-    """Encode online (query + candidate) bằng model."""
     def __init__(self, model):
         self.model = model
     def __call__(self, texts):
@@ -91,20 +60,10 @@ class FullEmbedder:
             texts = [texts]
         emb = self.model.encode(texts, normalize_embeddings=True)
         return np.asarray(emb, dtype="float32")
-
 embed_fn_full = FullEmbedder(model)
-
 THRESHOLDS = [0.0, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55]
-
-print(f"\n{'='*70}")
-print(f"Sweep sanity threshold trên {len(TEST_SET)} case gốc + expanded variants")
-print(f"Dict: {len(icd_df)} entries")
-print(f"Thresholds: {THRESHOLDS}")
-print(f"{'='*70}\n")
-
 for threshold in THRESHOLDS:
     matcher = DiseaseMatcher(icd_df, embed_fn=embed_fn_full, embed_sanity_threshold=threshold)
-
     t0 = time.time()
     results = []
     for text, expected_code, ref_name in TEST_SET:
@@ -117,22 +76,20 @@ for threshold in THRESHOLDS:
             "correct": predicted == expected_code,
             "ref": ref_name,
         })
-
     correct = sum(1 for r in results if r["correct"])
     total = len(results)
     stages = {}
     for r in results:
         stages[r["stage"]] = stages.get(r["stage"], 0) + 1
     elapsed = time.time() - t0
-
     # Đếm số case bị sanity reject (có trong fuzzy nhưng bị loại)
     fuzzy_rejected = sum(1 for r in results
                          if r["stage"] == "unmatched" and r["predicted"] is None
                          and any(r["input"] == text for text, _, _ in TEST_SET))
 
-    print(f"--- threshold={threshold:.2f} ---")
-    print(f"  Accuracy: {correct}/{total} ({correct/total:.1%})")
-    print(f"  Stages: exact={stages.get('exact',0)}, exact_nodia={stages.get('exact_no_diacritic',0)}, "
+    print(f"threshold={threshold:.2f}")
+    print(f"Accuracy: {correct}/{total} ({correct/total:.1%})")
+    print(f"Stages: exact={stages.get('exact',0)}, exact_nodia={stages.get('exact_no_diacritic',0)}, "
           f"token_set={stages.get('token_set_fuzzy',0)}, edit_dist={stages.get('edit_distance_fuzzy',0)}, "
           f"unmatched={stages.get('unmatched',0)}")
     print(f"  Time: {elapsed:.1f}s ({elapsed/total*1000:.0f}ms/query)")
@@ -144,7 +101,5 @@ for threshold in THRESHOLDS:
         for w in wrong[:5]:
             print(f"    '{w['input'][:50]}' -> pred={w['predicted']}, exp={w['expected']} ({w['stage']}, ref={w['ref']})")
         if len(wrong) > 5:
-            print(f"    ... và {len(wrong)-5} case sai khác")
+            print(f"{len(wrong)-5} case sai")
     print()
-
-print("DONE ✅ — gửi lại kết quả này để phân tích threshold tối ưu")
